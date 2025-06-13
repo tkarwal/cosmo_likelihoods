@@ -1,0 +1,12 @@
+# author: Tanvi Karwal with input from Dillon Brout 
+# data: https://github.com/des-science/DES-SN5YR/blob/main/4_DISTANCES_COVMAT/DES-SN5YR_HD%2BMetaData.csv 
+# covmat: https://github.com/des-science/DES-SN5YR/blob/main/4_DISTANCES_COVMAT/STAT%2BSYS.txt.gz
+
+DESY5_SNe.data_directory = os.path.join(data.path['data'], 'DESY5_SNe')
+DESY5_SNe.settings       = 'DESY5_SNe.dataset'
+DESY5_SNe.conflicting_experiments = ['JLA_simple', 'JLA','Pantheon','Pantheon_Plus_SH0ES', 'Pantheon_Plus']
+
+# DESY5_SNe.z_min = 0.01 # remove low z supernovae that are shared with SH0ES? 
+DESY5_SNe.z_min = 0.0
+
+DESY5_SNe.use_nuisance = ['M']
