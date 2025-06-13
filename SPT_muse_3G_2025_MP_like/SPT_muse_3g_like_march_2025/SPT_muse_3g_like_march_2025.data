@@ -1,0 +1,4 @@
+SPT_muse_3g_like_march_2025.components = ["ϕϕ"]
+# SPT_muse_3g_like_march_2025.components = ["EE"]
+
+SPT_muse_3g_like_march_2025.lmax = 5000 
