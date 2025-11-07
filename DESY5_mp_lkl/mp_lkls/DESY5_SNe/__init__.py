@@ -4,7 +4,9 @@
 
 .. moduleauthor:: Tanvi Karwal with help from Dillon Brout
 
-Based on the previous Pantheon_Plus lkl from Vivian Poulin and Dillon Brout
+Based loosely on the previous Pantheon_Plus lkl from Vivian Poulin and Dillon Brout
+Major changes to read in DES Y5 SNe data and covariance matrix, and to allow for option
+to use only DES SNe or all SNe in the sample.
 
 .. code::
 
@@ -67,6 +69,8 @@ class DESY5_SNe(Likelihood_sn):
         self.light_curve_params = self.read_light_curve_parameters()
         # Grab statistical error to add to diagonal of covmat 
         self.mu_obs_err = self.light_curve_params.MUERR_FINAL
+        # Grab survey ID for each SN in case we want to cut out all non-DES SNe
+        self.survey_id = self.light_curve_params.IDSURVEY
 
         # Reordering by J. Renk. The following steps can be computed in the
         # initialisation step as they do not depend on the point in parameter-space
@@ -81,36 +85,28 @@ class DESY5_SNe(Likelihood_sn):
         # pointer assignment)
         C00 = self.C00
 
-
         covm = ne.evaluate("C00")
 
         # Now add in the statistical error to the diagonal
         covm += np.diag(self.mu_obs_err**2)
 
-	#VP: This routine isolates the part of the data that are at z>self.z_min = 0.01 by default
-	#The data are ordered by increasing z, which simplifies things.
-        sn = self.light_curve_params
-        true_size=0
-        ignored = 0
-
-        for ii in range(len(self.light_curve_params.zHD)):
-                if self.light_curve_params.zHD[ii]>self.z_min:
-                	true_size+=1
-                else:
-                	ignored+=1
-        #print(true_size,ignored)
-        self.true_size = true_size
-        newcovm = np.zeros((true_size,true_size), 'float64')
-        newcovm=covm[ignored:,ignored:]
-
-        print(newcovm[:10,:10])
+        # Next we check if we want to retain just DES SNe or all SNe
+        # The data are ordered roughly by survey which simplifies removing everything that is not DES 
+        # the DES survey ID is 10. We keep that, remove everything else. 
+        # We also save the mask for later use in loglkl
+        if self.DES_only: 
+            self.mask = self.survey_id == 10
+        else:
+            self.mask = self.survey_id > -np.inf
+        # Apply the mask to the covariance matrix
+        newcov = covm[np.ix_(self.mask, self.mask)]
 
         # Whiten the residuals, in two steps.
         # Step 1) Compute the Cholesky decomposition of the covariance matrix, in
         # place. This is a time expensive (0.015 seconds) part, which is why it is
         # now done in init. Note that this is different to JLA, where it needed to
         # be done inside the loglkl function.
-        self.cov = la.cholesky(newcovm, lower=True, overwrite_a=True)
+        self.cov = la.cholesky(newcov, lower=True, overwrite_a=True)
         # Step 2) depends on point in parameter space -> done in loglkl calculation
 
 
@@ -123,24 +119,19 @@ class DESY5_SNe(Likelihood_sn):
         # containing the predicted distance modulus for each SN in the JLA
         # sample, given the redshift of the supernova.)
 
-
-        redshifts = self.light_curve_params.zHD
-        size = redshifts.size
-
-	#VP: true size is the number of data points after removing those with z < self.z_min
-        moduli = np.empty((self.true_size, ))
-        Mb_obs = np.empty((self.true_size, ))
+	    # Masking these according to whether we are keeping only DES SNe or all SNe
+        moduli = np.empty((np.sum(self.mask), ))
+        Mb_obs = np.empty((np.sum(self.mask), ))
         good_z = 0
-
-        for index, row in self.light_curve_params.iterrows():
+        # Loop over all SNe to compute the moduli at their redshifts with the mask 
+        for index, row in self.light_curve_params[self.mask].iterrows():
             z_cmb = row['zHD']
             z_hel = row['zHEL']
             Mb_corr = row['mB_corr']
-	    #this condition allows to extract the data with "good z", i.e. z>z_min
-            if z_cmb > self.z_min:
-                moduli[good_z] = 5 * np.log10((1+z_cmb)*(1+z_hel)*cosmo.angular_distance(z_cmb)) + 25
-                Mb_obs[good_z] = Mb_corr
-                good_z+=1
+
+            moduli[good_z] = 5 * np.log10((1+z_cmb)*(1+z_hel)*cosmo.angular_distance(z_cmb)) + 25
+            Mb_obs[good_z] = Mb_corr
+            good_z+=1
 
         # Convenience variables: store the nuisance parameters in short named
         # variables
@@ -148,8 +139,7 @@ class DESY5_SNe(Likelihood_sn):
              data.mcmc_parameters['M']['scale'])
 
         # Compute the residuals (estimate of distance moduli - exact moduli)
-        residuals = np.empty((self.true_size,))
-        sn = self.light_curve_params
+        residuals = np.empty((np.sum(self.mask),))
         # This operation loops over all supernovae!
         # Compute the approximate moduli
         residuals = Mb_obs - M
